@@ -50,11 +50,13 @@
     animation: love 5s ease-in-out infinite;
 }
 
-.slide-desktop {
+.slide-desktop,
+.slide-home {
     transform: scale(1);
     transition: transform 10s linear;
 }
 
-.slide-desktop-active {
+.slide-desktop-active,
+.slide-home-active {
     transform: scale(1.15);
 }
