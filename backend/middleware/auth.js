@@ -36,7 +36,7 @@ function authAdmin(req, res, next) {
  * If Bearer token → admin context.
  * If x-access-key → guest context.
  */
-function authGuestOrAdmin(req, res, next) {
+async function authGuestOrAdmin(req, res, next) {
     const authHeader = req.headers['authorization'];
     const accessKey = req.headers['x-access-key'];
 
@@ -56,14 +56,19 @@ function authGuestOrAdmin(req, res, next) {
     }
 
     if (accessKey) {
-        const db = getDb();
-        const user = db.prepare('SELECT id, uuid FROM users WHERE access_key = ?').get(accessKey);
-        if (!user) {
-            return res.status(401).json({ error: ['Invalid access key'] });
+        try {
+            const db = getDb();
+            const user = await db.prepare('SELECT id, uuid FROM users WHERE access_key = ?').get(accessKey);
+            if (!user) {
+                return res.status(401).json({ error: ['Invalid access key'] });
+            }
+            req.user = { id: user.id, uuid: user.uuid };
+            req.isAdmin = false;
+            return next();
+        } catch (err) {
+            console.error('Middleware DB Error:', err);
+            return res.status(500).json({ error: ['Internal server error'] });
         }
-        req.user = { id: user.id, uuid: user.uuid };
-        req.isAdmin = false;
-        return next();
     }
 
     return res.status(401).json({ error: ['Unauthorized'] });

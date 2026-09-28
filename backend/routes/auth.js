@@ -9,7 +9,7 @@ const router = express.Router();
  * POST /api/session
  * Admin login endpoint.
  */
-router.post('/session', (req, res) => {
+router.post('/session', async (req, res) => {
     try {
         const { email, password } = req.body || {};
 
@@ -18,7 +18,7 @@ router.post('/session', (req, res) => {
         }
 
         const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+        const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 
         if (!user) {
             return res.status(401).json({ error: ['Invalid email or password'] });
@@ -45,10 +45,10 @@ router.post('/session', (req, res) => {
  * GET /api/user
  * Get current admin details and settings.
  */
-router.get('/user', authAdmin, (req, res) => {
+router.get('/user', authAdmin, async (req, res) => {
     try {
         const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
 
         if (!user) {
             return res.status(404).json({ error: ['User not found'] });
@@ -80,10 +80,10 @@ router.get('/user', authAdmin, (req, res) => {
  * PATCH /api/user
  * Update admin settings or password.
  */
-router.patch('/user', authAdmin, (req, res) => {
+router.patch('/user', authAdmin, async (req, res) => {
     try {
         const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
 
         if (!user) {
             return res.status(404).json({ error: ['User not found'] });
@@ -107,7 +107,7 @@ router.patch('/user', authAdmin, (req, res) => {
             }
 
             const hashed = bcrypt.hashSync(body.new_password, 10);
-            db.prepare('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashed, user.id);
+            await db.prepare('UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(hashed, user.id);
 
             return res.status(200).json({
                 code: 200,
@@ -147,7 +147,7 @@ router.patch('/user', authAdmin, (req, res) => {
             values.push(user.id);
 
             const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
-            db.prepare(sql).run(...values);
+            await db.prepare(sql).run(...values);
         }
 
         return res.status(200).json({
@@ -165,12 +165,12 @@ router.patch('/user', authAdmin, (req, res) => {
  * PUT /api/key
  * Regenerate access key.
  */
-router.put('/key', authAdmin, (req, res) => {
+router.put('/key', authAdmin, async (req, res) => {
     try {
         const db = getDb();
         const newKey = generateAccessKey();
 
-        db.prepare('UPDATE users SET access_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newKey, req.user.id);
+        await db.prepare('UPDATE users SET access_key = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newKey, req.user.id);
 
         return res.status(200).json({
             code: 200,
@@ -190,27 +190,27 @@ router.put('/key', authAdmin, (req, res) => {
  * GET /api/stats
  * Admin dashboard statistics.
  */
-router.get('/stats', authAdmin, (req, res) => {
+router.get('/stats', authAdmin, async (req, res) => {
     try {
         const db = getDb();
         const userId = req.user.id;
 
-        const commentsCount = db.prepare('SELECT COUNT(*) as count FROM comments WHERE user_id = ?').get(userId).count;
+        const commentsCount = await db.prepare('SELECT COUNT(*) as count FROM comments WHERE user_id = ?').get(userId).count;
 
-        const likesCount = db.prepare(`
+        const likesCount = await db.prepare(`
             SELECT COUNT(l.id) as count
             FROM likes l
             JOIN comments c ON l.comment_id = c.id
             WHERE c.user_id = ?
         `).get(userId).count;
 
-        const presentCount = db.prepare(`
+        const presentCount = await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL AND presence = 1
         `).get(userId).count;
 
-        const absentCount = db.prepare(`
+        const absentCount = await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL AND presence = 0
@@ -236,12 +236,12 @@ router.get('/stats', authAdmin, (req, res) => {
  * GET /api/download
  * Download CSV export of all comments.
  */
-router.get('/download', authAdmin, (req, res) => {
+router.get('/download', authAdmin, async (req, res) => {
     try {
         const db = getDb();
         const userId = req.user.id;
 
-        const rows = db.prepare(`
+        const rows = await db.prepare(`
             SELECT c.uuid, c.name, c.presence, c.comment, c.created_at, c.ip, c.user_agent,
                    CASE WHEN c.parent_id IS NULL THEN 'Parent' ELSE 'Reply' END as type
             FROM comments c

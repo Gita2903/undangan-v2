@@ -44,20 +44,20 @@ router.post('/staff/session', staffLoginLimiter, (req, res) => {
     });
 });
 
-router.get('/invitations', authAdmin, (req, res) => {
+router.get('/invitations', authAdmin, async (req, res) => {
     const db = getDb();
-    const guests = db.prepare(`
+    const guests = await db.prepare(`
         SELECT g.uuid, g.name, g.group_name, g.created_at, g.revoked_at,
                c.checked_in_at, c.staff_username
         FROM invited_guests g
         LEFT JOIN check_ins c ON c.guest_id = g.id
-        ORDER BY g.name COLLATE NOCASE, g.id
-    `).all();
+        ORDER BY g.name, g.id
+    `).all(); // PostgreSQL doesn't support COLLATE NOCASE natively like SQLite, removed it.
 
     return res.status(200).json({ code: 200, data: { guests }, error: null });
 });
 
-router.post('/invitations', authAdmin, (req, res) => {
+router.post('/invitations', authAdmin, async (req, res) => {
     const { name, group_name = '' } = req.body || {};
     if (typeof name !== 'string' || name.trim().length === 0 || name.trim().length > 100) {
         return res.status(400).json({ error: ['Name is required and must be at most 100 characters'] });
@@ -68,7 +68,7 @@ router.post('/invitations', authAdmin, (req, res) => {
 
     const token = createQrToken();
     const uuid = uuidv4();
-    const result = getDb().prepare(`
+    await getDb().prepare(`
         INSERT INTO invited_guests (uuid, name, group_name, token_hash)
         VALUES (?, ?, ?, ?)
     `).run(uuid, name.trim(), group_name.trim(), hashQrToken(token));
@@ -83,9 +83,9 @@ router.post('/invitations', authAdmin, (req, res) => {
     });
 });
 
-router.post('/invitations/:uuid/rotate', authAdmin, (req, res) => {
+router.post('/invitations/:uuid/rotate', authAdmin, async (req, res) => {
     const db = getDb();
-    const guest = db.prepare(`
+    const guest = await db.prepare(`
         SELECT g.id, g.uuid, g.name, g.group_name, g.revoked_at, c.checked_in_at
         FROM invited_guests g
         LEFT JOIN check_ins c ON c.guest_id = g.id
@@ -100,7 +100,7 @@ router.post('/invitations/:uuid/rotate', authAdmin, (req, res) => {
     }
 
     const token = createQrToken();
-    db.prepare(`
+    await db.prepare(`
         UPDATE invited_guests SET token_hash = ?, revoked_at = NULL WHERE id = ?
     `).run(hashQrToken(token), guest.id);
 
@@ -111,8 +111,8 @@ router.post('/invitations/:uuid/rotate', authAdmin, (req, res) => {
     });
 });
 
-router.delete('/invitations/:uuid', authAdmin, (req, res) => {
-    const result = getDb().prepare(`
+router.delete('/invitations/:uuid', authAdmin, async (req, res) => {
+    const result = await getDb().prepare(`
         UPDATE invited_guests SET revoked_at = CURRENT_TIMESTAMP
         WHERE uuid = ? AND revoked_at IS NULL
     `).run(req.params.uuid);
@@ -123,42 +123,49 @@ router.delete('/invitations/:uuid', authAdmin, (req, res) => {
     return res.status(200).json({ code: 200, data: { status: true }, error: null });
 });
 
-router.post('/scan', authCheckinStaff, (req, res) => {
+router.post('/scan', authCheckinStaff, async (req, res) => {
     const { token } = req.body || {};
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/i.test(token)) {
         return res.status(400).json({ error: ['QR token is invalid'] });
     }
 
-    const db = getDb();
-    const scan = db.transaction(() => {
-        const guest = db.prepare(`
-            SELECT id, uuid, name, group_name, revoked_at
-            FROM invited_guests WHERE token_hash = ?
-        `).get(hashQrToken(token));
+    try {
+        const db = getDb();
+        const scanResult = await db.transaction(async (tx) => {
+            const guest = await tx.prepare(`
+                SELECT id, uuid, name, group_name, revoked_at
+                FROM invited_guests WHERE token_hash = ?
+            `).get(hashQrToken(token));
 
-        if (!guest) {
-            return { status: 'invalid' };
-        }
-        if (guest.revoked_at) {
-            return { status: 'revoked', guest };
-        }
+            if (!guest) {
+                return { status: 'invalid' };
+            }
+            if (guest.revoked_at) {
+                return { status: 'revoked', guest };
+            }
 
-        const existingCheckin = db.prepare(`
-            SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
-        `).get(guest.id);
-        if (existingCheckin) {
-            return { status: 'already_checked_in', guest, ...existingCheckin };
-        }
+            const existingCheckin = await tx.prepare(`
+                SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
+            `).get(guest.id);
+            if (existingCheckin) {
+                return { status: 'already_checked_in', guest, ...existingCheckin };
+            }
 
-        db.prepare('INSERT INTO check_ins (guest_id, staff_username) VALUES (?, ?)')
-            .run(guest.id, req.staff.username);
-        const checkin = db.prepare(`
-            SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
-        `).get(guest.id);
-        return { status: 'checked_in', guest, ...checkin };
-    });
+            await tx.prepare('INSERT INTO check_ins (guest_id, staff_username) VALUES (?, ?)')
+                .run(guest.id, req.staff.username);
+                
+            const checkin = await tx.prepare(`
+                SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
+            `).get(guest.id);
+            
+            return { status: 'checked_in', guest, ...checkin };
+        });
 
-    return res.status(200).json({ code: 200, data: scan(), error: null });
+        return res.status(200).json({ code: 200, data: scanResult, error: null });
+    } catch (err) {
+        console.error('Scan error:', err);
+        return res.status(500).json({ error: ['Internal server error'] });
+    }
 });
 
 module.exports = router;

@@ -91,10 +91,10 @@ async function resolveGifUrl(gifId, tenorKey) {
  * GET /api/v2/config
  * Return guest configuration for the active invitation.
  */
-router.get('/v2/config', authGuestOrAdmin, (req, res) => {
+router.get('/v2/config', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
 
         if (!user) {
             return res.status(404).json({ error: ['Invitation not found'] });
@@ -123,25 +123,25 @@ router.get('/v2/config', authGuestOrAdmin, (req, res) => {
  * GET /api/v2/comment
  * Get paginated comments with replies and likes count.
  */
-router.get('/v2/comment', authGuestOrAdmin, (req, res) => {
+router.get('/v2/comment', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
         const userId = req.user.id;
-        const user = db.prepare('SELECT tz FROM users WHERE id = ?').get(userId);
+        const user = await db.prepare('SELECT tz FROM users WHERE id = ?').get(userId);
         const timeZone = user?.tz || 'Asia/Jakarta';
 
         const per = Math.min(100, Math.max(1, parseInt(req.query.per, 10) || 10));
         const next = Math.max(0, parseInt(req.query.next, 10) || 0);
 
         // Count total parent comments
-        const totalParents = db.prepare(`
+        const totalParents = await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL
         `).get(userId).count;
 
         // Fetch parent comments
-        const parents = db.prepare(`
+        const parents = await db.prepare(`
             SELECT c.*,
                    (SELECT COUNT(*) FROM likes l WHERE l.comment_id = c.id) as like_count
             FROM comments c
@@ -155,7 +155,7 @@ router.get('/v2/comment', authGuestOrAdmin, (req, res) => {
         let allReplies = [];
         if (parentIds.length > 0) {
             const placeholders = parentIds.map(() => '?').join(',');
-            allReplies = db.prepare(`
+            allReplies = await db.prepare(`
                 SELECT c.*,
                        (SELECT COUNT(*) FROM likes l WHERE l.comment_id = c.id) as like_count
                 FROM comments c
@@ -225,7 +225,7 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
         const userId = req.user.id;
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
         if (!user) {
             return res.status(404).json({ error: ['Invitation not found'] });
@@ -246,7 +246,7 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
                 return res.status(403).json({ error: ['Replies are disabled by host'] });
             }
 
-            const parent = db.prepare('SELECT id FROM comments WHERE uuid = ? AND user_id = ?').get(id, userId);
+            const parent = await db.prepare('SELECT id FROM comments WHERE uuid = ? AND user_id = ?').get(id, userId);
             if (!parent) {
                 return res.status(404).json({ error: ['Parent comment not found'] });
             }
@@ -266,7 +266,7 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
         const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
         const userAgent = req.headers['user-agent'] || null;
 
-        db.prepare(`
+        await db.prepare(`
             INSERT INTO comments (uuid, own, user_id, parent_id, name, presence, comment, gif_url, is_admin, ip, user_agent)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(commentUuid, commentOwn, userId, parentId, name.trim(), presenceVal, comment || null, gifUrl || null, isAdminVal, ip, userAgent);
@@ -307,7 +307,7 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
         const db = getDb();
         const userId = req.user.id;
         const idParam = req.params.id;
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
         if (!user) {
             return res.status(404).json({ error: ['Invitation not found'] });
@@ -320,9 +320,9 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
         // Find comment by own (for guest) or own/uuid (for admin)
         let commentRow;
         if (req.isAdmin) {
-            commentRow = db.prepare('SELECT * FROM comments WHERE (own = ? OR uuid = ?) AND user_id = ?').get(idParam, idParam, userId);
+            commentRow = await db.prepare('SELECT * FROM comments WHERE (own = ? OR uuid = ?) AND user_id = ?').get(idParam, idParam, userId);
         } else {
-            commentRow = db.prepare('SELECT * FROM comments WHERE own = ? AND user_id = ?').get(idParam, userId);
+            commentRow = await db.prepare('SELECT * FROM comments WHERE own = ? AND user_id = ?').get(idParam, userId);
         }
 
         if (!commentRow) {
@@ -348,7 +348,7 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
         const presenceVal = presence !== null && presence !== undefined ? (presence ? 1 : 0) : commentRow.presence;
         const commentVal = comment !== undefined ? (comment || null) : commentRow.comment;
 
-        db.prepare(`
+        await db.prepare(`
             UPDATE comments
             SET presence = ?, comment = ?, gif_url = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -369,12 +369,12 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
  * DELETE /api/comment/:id
  * Delete comment (and cascaded replies/likes).
  */
-router.delete('/comment/:id', authGuestOrAdmin, (req, res) => {
+router.delete('/comment/:id', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
         const userId = req.user.id;
         const idParam = req.params.id;
-        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+        const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
         if (!user) {
             return res.status(404).json({ error: ['Invitation not found'] });
@@ -386,16 +386,16 @@ router.delete('/comment/:id', authGuestOrAdmin, (req, res) => {
 
         let commentRow;
         if (req.isAdmin) {
-            commentRow = db.prepare('SELECT * FROM comments WHERE (own = ? OR uuid = ?) AND user_id = ?').get(idParam, idParam, userId);
+            commentRow = await db.prepare('SELECT * FROM comments WHERE (own = ? OR uuid = ?) AND user_id = ?').get(idParam, idParam, userId);
         } else {
-            commentRow = db.prepare('SELECT * FROM comments WHERE own = ? AND user_id = ?').get(idParam, userId);
+            commentRow = await db.prepare('SELECT * FROM comments WHERE own = ? AND user_id = ?').get(idParam, userId);
         }
 
         if (!commentRow) {
             return res.status(404).json({ error: ['Comment not found'] });
         }
 
-        db.prepare('DELETE FROM comments WHERE id = ?').run(commentRow.id);
+        await db.prepare('DELETE FROM comments WHERE id = ?').run(commentRow.id);
 
         return res.status(200).json({
             code: 200,
@@ -412,12 +412,12 @@ router.delete('/comment/:id', authGuestOrAdmin, (req, res) => {
  * POST /api/comment/:id
  * Like a comment.
  */
-router.post('/comment/:id', authGuestOrAdmin, (req, res) => {
+router.post('/comment/:id', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
         const commentUuid = req.params.id;
 
-        const commentRow = db.prepare('SELECT id FROM comments WHERE uuid = ?').get(commentUuid);
+        const commentRow = await db.prepare('SELECT id FROM comments WHERE uuid = ?').get(commentUuid);
         if (!commentRow) {
             return res.status(404).json({ error: ['Comment not found'] });
         }
@@ -425,12 +425,12 @@ router.post('/comment/:id', authGuestOrAdmin, (req, res) => {
         const likeUuid = uuidv4();
         const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
 
-        const existingLike = db.prepare('SELECT id FROM likes WHERE comment_id = ? AND ip = ?').get(commentRow.id, ip);
+        const existingLike = await db.prepare('SELECT id FROM likes WHERE comment_id = ? AND ip = ?').get(commentRow.id, ip);
         if (existingLike) {
             return res.status(409).json({ error: ['Already liked'] });
         }
 
-        db.prepare(`
+        await db.prepare(`
             INSERT INTO likes (uuid, comment_id, ip)
             VALUES (?, ?, ?)
         `).run(likeUuid, commentRow.id, ip);
@@ -450,12 +450,12 @@ router.post('/comment/:id', authGuestOrAdmin, (req, res) => {
  * PATCH /api/comment/:id
  * Unlike a comment.
  */
-router.patch('/comment/:id', authGuestOrAdmin, (req, res) => {
+router.patch('/comment/:id', authGuestOrAdmin, async (req, res) => {
     try {
         const db = getDb();
         const likeUuid = req.params.id;
 
-        const info = db.prepare('DELETE FROM likes WHERE uuid = ?').run(likeUuid);
+        const info = await db.prepare('DELETE FROM likes WHERE uuid = ?').run(likeUuid);
 
         return res.status(200).json({
             code: 200,
