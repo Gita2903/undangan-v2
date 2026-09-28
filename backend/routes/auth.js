@@ -195,26 +195,26 @@ router.get('/stats', authAdmin, async (req, res) => {
         const db = getDb();
         const userId = req.user.id;
 
-        const commentsCount = await db.prepare('SELECT COUNT(*) as count FROM comments WHERE user_id = ?').get(userId).count;
+        const commentsCount = Number((await db.prepare('SELECT COUNT(*) as count FROM comments WHERE user_id = ?').get(userId)).count);
 
-        const likesCount = await db.prepare(`
+        const likesCount = Number((await db.prepare(`
             SELECT COUNT(l.id) as count
             FROM likes l
             JOIN comments c ON l.comment_id = c.id
             WHERE c.user_id = ?
-        `).get(userId).count;
+        `).get(userId)).count);
 
-        const presentCount = await db.prepare(`
+        const presentCount = Number((await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL AND presence = 1
-        `).get(userId).count;
+        `).get(userId)).count);
 
-        const absentCount = await db.prepare(`
+        const absentCount = Number((await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL AND presence = 0
-        `).get(userId).count;
+        `).get(userId)).count);
 
         return res.status(200).json({
             code: 200,

@@ -134,11 +134,11 @@ router.get('/v2/comment', authGuestOrAdmin, async (req, res) => {
         const next = Math.max(0, parseInt(req.query.next, 10) || 0);
 
         // Count total parent comments
-        const totalParents = await db.prepare(`
+        const totalParents = Number((await db.prepare(`
             SELECT COUNT(*) as count
             FROM comments
             WHERE user_id = ? AND parent_id IS NULL
-        `).get(userId).count;
+        `).get(userId)).count);
 
         // Fetch parent comments
         const parents = await db.prepare(`
