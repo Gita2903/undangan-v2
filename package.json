@@ -16,9 +16,9 @@
         "lint:css": "stylelint css",
         "lint:html": "htmlhint **/*.html",
         "dev": "npx esbuild js/*.js --bundle --outdir=dist --servedir=. --serve=8082",
-        "build": "npx esbuild js/*.js --bundle --minify --outdir=dist",
-        "build:public": "npm run build && node -e \"const fs = require('fs-extra'); fs.ensureDir('public').then(() => Promise.all(['assets', 'css', 'dist', 'index.html', 'dashboard.html', 'guests.html', 'checkin.html'].map((f) => fs.copy(f, 'public/' + f)))).then(() => console.log('✅ Successfully!'));\"",
-        "build:production": "npm run build:public",
+        "build:js": "npx esbuild js/*.js --bundle --minify --outdir=dist",
+        "build": "npm run build:js && node -e \"const fs = require('fs-extra'); fs.ensureDir('public').then(() => Promise.all(['assets', 'css', 'dist', 'index.html', 'dashboard.html', 'guests.html', 'checkin.html'].map((f) => fs.copy(f, 'public/' + f)))).then(() => console.log('✅ Successfully!'));\"",
+        "build:production": "npm run build",
         "start:production": "node backend/server.js"
     },
     "dependencies": {
