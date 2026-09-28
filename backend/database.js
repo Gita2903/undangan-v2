@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const DEFAULT_ACCESS_KEY = '4eaf6356471a486becad049482cc9f0130ec225c59e586fcf1bc096e93e43f57';
 
 let pool;
+let initPromise = null;
 
 /**
  * Replace SQLite ? placeholders with PostgreSQL $1, $2 placeholders
@@ -125,8 +126,9 @@ function initDatabase() {
         ssl: connectionString && connectionString.includes('supabase') ? { rejectUnauthorized: false } : false
     });
 
-    // Run async initialization without blocking
-    runInitQueries();
+    // Kick off table creation + admin seed. The promise is kept so requests
+    // can wait for it via whenReady() (matters on serverless cold starts).
+    initPromise = runInitQueries();
 
     return pool;
 }
@@ -184,6 +186,14 @@ const dbWrapper = {
     }
 };
 
+/**
+ * Resolves once table creation and admin seeding have finished.
+ * runInitQueries() catches its own errors, so this never rejects.
+ */
+function whenReady() {
+    return initPromise || Promise.resolve();
+}
+
 function getDb() {
     if (!pool) {
         throw new Error('Database not initialized. Call initDatabase() first.');
@@ -195,6 +205,7 @@ function closeDatabase() {
     if (pool) {
         pool.end();
         pool = null;
+        initPromise = null;
     }
 }
 
@@ -204,6 +215,7 @@ function generateAccessKey() {
 
 module.exports = {
     initDatabase,
+    whenReady,
     getDb,
     closeDatabase,
     generateAccessKey,

@@ -5,7 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
-const { initDatabase } = require('./database');
+const { initDatabase, whenReady } = require('./database');
 const authRoutes = require('./routes/auth');
 const commentRoutes = require('./routes/comment');
 const checkinRoutes = require('./routes/checkin');
@@ -65,6 +65,11 @@ const loginLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 app.use('/api/session', loginLimiter);
+
+// Wait for DB tables/seed to be ready before handling any API request.
+app.use('/api', (req, res, next) => {
+    whenReady().then(() => next(), next);
+});
 
 // Request logger for development
 app.use((req, res, next) => {

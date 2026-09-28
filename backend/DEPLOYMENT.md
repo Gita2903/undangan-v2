@@ -1,34 +1,72 @@
-# Production Deployment
+# Panduan Deployment
 
-Target origin: `https://wedding-gita-rendra.cungz.site/`.
+Target domain: `https://wedding-gita-rendra.cungz.site/`
 
-The server loads environment variables from `backend/.env`. Keep this file outside version control and never copy it into `public/`.
+Backend memakai **PostgreSQL** lewat `DATABASE_URL` (contoh: Supabase). Tidak ada file database lokal yang perlu di-backup dari server aplikasi.
 
-## Production
+## Environment variable
 
-- Set `NODE_ENV=production` and a unique `JWT_SECRET` with at least 32 characters.
-- To enable door-staff login, set a separate `CHECKIN_USERNAME` (at least 3 characters) and `CHECKIN_PASSWORD` (at least 12 characters). These credentials only issue check-in tokens and cannot access admin endpoints; if unset, check-in login returns a configuration error while the rest of the application remains available.
-- Set `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 12 characters), and `ADMIN_ACCESS_KEY` (at least 32 characters). On first run, these seed a new database. If an existing database still has the demo credentials, startup rotates the existing admin row from these values once, preserving its comments and related records.
-- Change the invitation page's `data-key` value in `index.html` to the same value as `ADMIN_ACCESS_KEY`. The key is the guest-facing API credential and is intentionally present in the published page; rotate it from the dashboard if it is exposed, then update the page value.
-- Set `CORS_ORIGINS` to comma-separated, exact browser origins, including scheme and port where applicable. Same-origin hosting does not require a CORS entry.
-- Set `TRUST_PROXY_HOPS` only when behind a trusted reverse proxy. Use the number of proxy hops between the internet and this application.
-- Serve the site and API over HTTPS in production.
-- Keep `PORT=3000` for the Node service behind the hosting reverse proxy. Set `TRUST_PROXY_HOPS=1` only if exactly one trusted proxy forwards requests to Node; otherwise leave it unset or use the actual trusted proxy hop count.
+Server membaca `backend/.env` (self-host) atau Environment Variables di dashboard hosting (Vercel). Jangan commit `.env`.
 
-The frontend and API use the same origin, so leave `data-url` unset/empty and keep `CORS_ORIGINS=https://wedding-gita-rendra.cungz.site`. Same-origin requests do not require CORS, but this exact allowlist is retained for the browser API policy. If a separate API subdomain is introduced later, set its base URL on `<body>` for each HTML page and add only the invitation-site origin to `CORS_ORIGINS`.
+| Variable | Wajib (production) | Keterangan |
+| --- | --- | --- |
+| `NODE_ENV` | ya | Isi `production`. |
+| `DATABASE_URL` | ya | Connection string PostgreSQL. Untuk Supabase di Vercel, pakai **pooler** (port 6543), bukan direct connection, supaya koneksi tidak habis di serverless. |
+| `JWT_SECRET` | ya | Acak, minimal 32 karakter. Server menolak start di production jika kurang. |
+| `ADMIN_EMAIL` | ya | Email akun admin awal. |
+| `ADMIN_PASSWORD` | ya | Minimal 12 karakter. |
+| `ADMIN_ACCESS_KEY` | ya | Acak, minimal 32 karakter. |
+| `ADMIN_NAME` | tidak | Nama admin, default `Admin`. |
+| `CHECKIN_USERNAME` | untuk check-in | Minimal 3 karakter. |
+| `CHECKIN_PASSWORD` | untuk check-in | Minimal 12 karakter. Kredensial ini hanya bisa menerbitkan token check-in, tidak bisa akses endpoint admin. Jika kosong, login petugas mengembalikan error konfigurasi dan fitur lain tetap jalan. |
+| `CORS_ORIGINS` | ya | Origin browser yang diizinkan, dipisah koma, lengkap dengan scheme (dan port jika ada). Untuk hosting satu origin, isi dengan domain undangan. |
+| `TRUST_PROXY_HOPS` | tidak | Jumlah reverse proxy tepercaya di depan Node. Jika kosong, default 1 (cocok untuk Vercel). Ubah sesuai jumlah proxy yang sebenarnya untuk self-host. |
+| `PORT` | tidak | Default `3000`. |
 
-The admin guest manager is available at `/guests.html`; door staff use `/checkin.html`. For a separate API origin, set the same `data-url` API base on each page. Camera access requires HTTPS or localhost.
+Contoh ada di [`.env.example`](.env.example).
 
-## Build and run
+## Seed admin (penting)
 
-1. Install dependencies in the repository root and `backend` (`npm install` in each directory).
-2. Build the static deployment directory with `npm run build:production` from the repository root. Express serves only `public/`; source files, `.env`, and SQLite are not part of that document root.
-3. Run `npm run start:production` from the repository root under a process manager. Keep `backend/undangan.db` on persistent storage and back it up securely.
-4. Configure the hosting proxy to terminate TLS for `wedding-gita-rendra.cungz.site` and forward requests to Node on port 3000. DNS must point the domain at that host; these DNS/TLS/proxy changes are outside this repository and have not been applied here.
-5. Confirm the proxy serves `/`, `/dashboard.html`, `/guests.html`, `/checkin.html`, and forwards `/api/*` to Node. Verify `/backend/.env` and `/backend/undangan.db` return 404.
+Akun admin dibuat **hanya saat tabel `users` masih kosong**, dari `ADMIN_EMAIL`, `ADMIN_PASSWORD`, dan `ADMIN_ACCESS_KEY`. Tidak ada rotasi otomatis jika database sudah pernah terisi.
 
-For local Laragon/Apache, the frontend may instead set `data-url="http://localhost:3000/"` in its HTML and the API `CORS_ORIGINS` must include the exact local page origin. Do not use this development URL on the production domain.
+Jika database sudah berisi akun demo (`admin@undangan.com` / `admin123`):
 
-## Tests
+1. Login ke `/dashboard.html`, ganti email/password, lalu regenerasi access key.
+2. Atau cek langsung: `SELECT email, access_key FROM users;`
 
-Run `npm test` from `backend`. The API suite creates a temporary SQLite database under the operating system's temp directory and deletes it after the run; it does not use `undangan.db`.
+## Access key dan `data-key`
+
+Ubah `data-key` di `<body>` `index.html` agar **sama persis** dengan `ADMIN_ACCESS_KEY` (atau access key terbaru di database). Key ini sengaja publik karena dipakai tamu untuk mengirim ucapan. Jika bocor atau disalahgunakan, regenerasi dari dashboard lalu update `data-key`.
+
+## Cara deploy
+
+Ada dua jalur. Pilih salah satu.
+
+### A. Vercel + Supabase
+
+`vercel.json` menjalankan `backend/server.js` sebagai serverless function untuk `/api/*`, dan build statis (`npm run build` → folder `public/`) untuk frontend.
+
+1. Set semua environment variable di atas di Project Settings → Environment Variables.
+2. Deploy. Vercel melayani file statis dari `public/` langsung; `express.static` di `server.js` tidak terpakai di jalur ini (tidak berbahaya, hanya dipakai untuk self-host).
+3. Saat cold start, API menunggu pembuatan tabel dan seed admin selesai sebelum memproses request pertama.
+
+### B. Self-host (Node di belakang reverse proxy)
+
+1. Jalankan `npm install` di root dan di `backend`.
+2. Build frontend: `npm run build:production` dari root.
+3. Jalankan `npm run start:production` dari root di bawah process manager (pm2, systemd, atau Docker).
+4. Arahkan reverse proxy (Nginx, Cloudflare Tunnel, dll.) ke Node di port 3000 dan terminasi HTTPS di proxy. Set `TRUST_PROXY_HOPS` sesuai jumlah proxy.
+
+Express hanya menyajikan folder `public/`. Kode sumber, `backend/`, dan `.env` tidak ikut terpublikasi.
+
+## Verifikasi setelah deploy
+
+- `/` , `/dashboard.html`, `/guests.html`, dan `/checkin.html` terbuka.
+- `/api/health` mengembalikan `{"status":"ok"}`.
+- `/backend/.env` dan `/backend/database.js` mengembalikan 404.
+- Login admin berhasil dengan kredensial production, dan akun demo tidak bisa dipakai.
+- Kamera untuk `/checkin.html` hanya berfungsi lewat HTTPS atau localhost.
+
+## Frontend dan API beda origin
+
+Jika API dipisah ke subdomain lain, set `data-url` di `<body>` setiap halaman HTML ke base URL API, dan tambahkan origin situs undangan ke `CORS_ORIGINS`. Jika satu origin, biarkan `data-url` kosong.
