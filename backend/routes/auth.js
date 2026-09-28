@@ -97,6 +97,10 @@ router.patch('/user', authAdmin, (req, res) => {
                 return res.status(400).json({ error: ['Old password and new password are required'] });
             }
 
+            if (body.new_password.length < 12) {
+                return res.status(400).json({ error: ['New password must be at least 12 characters'] });
+            }
+
             const isMatch = bcrypt.compareSync(body.old_password, user.password);
             if (!isMatch) {
                 return res.status(400).json({ error: ['Old password incorrect'] });

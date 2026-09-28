@@ -7,6 +7,31 @@ const { filterBadWords } = require('../utils/filter');
 
 const router = express.Router();
 
+function validateCommentPayload(body, isCreate) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return 'A JSON object is required';
+    }
+    if (isCreate && (typeof body.name !== 'string' || body.name.trim().length === 0)) {
+        return 'Name is required';
+    }
+    if (body.name !== undefined && (typeof body.name !== 'string' || body.name.trim().length > 100)) {
+        return 'Name must be a string of at most 100 characters';
+    }
+    if (body.comment !== undefined && body.comment !== null && (typeof body.comment !== 'string' || body.comment.length > 5000)) {
+        return 'Comment must be a string of at most 5000 characters';
+    }
+    if (body.presence !== undefined && body.presence !== null && typeof body.presence !== 'boolean') {
+        return 'Presence must be a boolean';
+    }
+    if (body.gif_id !== undefined && body.gif_id !== null && (typeof body.gif_id !== 'string' || body.gif_id.length > 200)) {
+        return 'GIF id must be a string of at most 200 characters';
+    }
+    if (body.id !== undefined && body.id !== null && (typeof body.id !== 'string' || body.id.length > 64)) {
+        return 'Parent id is invalid';
+    }
+    return null;
+}
+
 /**
  * Format SQLite CURRENT_TIMESTAMP to localized date string.
  */
@@ -35,7 +60,16 @@ function formatCommentDate(dateString, timeZone = 'Asia/Jakarta') {
 async function resolveGifUrl(gifId, tenorKey) {
     if (!gifId) return null;
     if (gifId.startsWith('http://') || gifId.startsWith('https://')) {
-        return gifId;
+        try {
+            const parsedUrl = new URL(gifId);
+            const allowedHosts = ['tenor.com', 'media.tenor.com', 'c.tenor.com'];
+            if (allowedHosts.includes(parsedUrl.hostname)) {
+                return gifId;
+            }
+        } catch {
+            return null;
+        }
+        return null;
     }
     if (tenorKey) {
         try {
@@ -96,7 +130,7 @@ router.get('/v2/comment', authGuestOrAdmin, (req, res) => {
         const user = db.prepare('SELECT tz FROM users WHERE id = ?').get(userId);
         const timeZone = user?.tz || 'Asia/Jakarta';
 
-        const per = Math.max(1, parseInt(req.query.per, 10) || 10);
+        const per = Math.min(100, Math.max(1, parseInt(req.query.per, 10) || 10));
         const next = Math.max(0, parseInt(req.query.next, 10) || 0);
 
         // Count total parent comments
@@ -199,8 +233,9 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
 
         let { id, name, presence, comment, gif_id } = req.body || {};
 
-        if (!name || name.trim().length === 0) {
-            return res.status(400).json({ error: ['Name is required'] });
+        const validationError = validateCommentPayload(req.body, true);
+        if (validationError) {
+            return res.status(400).json({ error: [validationError] });
         }
 
         let parentId = null;
@@ -228,7 +263,7 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
         const commentOwn = crypto.randomBytes(16).toString('hex');
         const isAdminVal = req.isAdmin ? 1 : 0;
         const presenceVal = presence ? 1 : 0;
-        const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
+        const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
         const userAgent = req.headers['user-agent'] || null;
 
         db.prepare(`
@@ -294,7 +329,12 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
             return res.status(404).json({ error: ['Comment not found'] });
         }
 
-        let { presence, comment, gif_id } = req.body || {};
+        const validationError = validateCommentPayload(req.body, false);
+        if (validationError) {
+            return res.status(400).json({ error: [validationError] });
+        }
+
+        let { presence, comment, gif_id } = req.body;
 
         if (user.is_filter && comment) {
             comment = filterBadWords(comment);
@@ -383,7 +423,12 @@ router.post('/comment/:id', authGuestOrAdmin, (req, res) => {
         }
 
         const likeUuid = uuidv4();
-        const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
+        const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+        const existingLike = db.prepare('SELECT id FROM likes WHERE comment_id = ? AND ip = ?').get(commentRow.id, ip);
+        if (existingLike) {
+            return res.status(409).json({ error: ['Already liked'] });
+        }
 
         db.prepare(`
             INSERT INTO likes (uuid, comment_id, ip)

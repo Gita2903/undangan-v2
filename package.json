@@ -2,7 +2,6 @@
     "devDependencies": {
         "@eslint/js": "^9.37.0",
         "eslint": "^9.37.0",
-        "fs-extra": "^11.3.2",
         "globals": "^16.4.0",
         "htmlhint": "^1.7.1",
         "madge": "^8.0.0",
@@ -13,15 +12,19 @@
         "start": "node backend/server.js",
         "server": "node backend/server.js",
         "server:dev": "node --watch backend/server.js",
-        "test": "cd backend && npm test",
         "lint:js": "eslint js",
         "lint:css": "stylelint css",
         "lint:html": "htmlhint **/*.html",
         "dev": "npx esbuild js/*.js --bundle --outdir=dist --servedir=. --serve=8082",
         "build": "npx esbuild js/*.js --bundle --minify --outdir=dist",
-        "build:public": "npm run build && node -e \"const fs = require('fs-extra'); fs.ensureDir('public').then(() => Promise.all(['assets', 'css', 'dist', 'index.html', 'dashboard.html'].map((f) => fs.copy(f, 'public/' + f)))).then(() => console.log('✅ Successfully!'));\""
+        "build:public": "npm run build && node -e \"const fs = require('fs-extra'); fs.ensureDir('public').then(() => Promise.all(['assets', 'css', 'dist', 'index.html', 'dashboard.html', 'guests.html', 'checkin.html'].map((f) => fs.copy(f, 'public/' + f)))).then(() => console.log('✅ Successfully!'));\"",
+        "build:production": "npm run build:public",
+        "start:production": "node backend/server.js"
     },
     "dependencies": {
-        "esbuild": "^0.25.10"
+        "esbuild": "^0.25.10",
+        "fs-extra": "^11.3.2",
+        "html5-qrcode": "^2.3.8",
+        "qrcode": "^1.5.4"
     }
 }

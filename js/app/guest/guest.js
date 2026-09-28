@@ -61,16 +61,9 @@ export const guest = (() => {
      * @returns {void}
      */
     const showGuestName = () => {
-        /**
-         * Make sure "to=" is the last query string.
-         * Ex. ?id=some-uuid-here&to=name
-         */
-        const raw = window.location.search.split('to=');
-        let name = null;
-
-        if (raw.length > 1 && raw[1].length >= 1) {
-            name = window.decodeURIComponent(raw[1]);
-        }
+        const nameFromUrl = new URLSearchParams(window.location.search).get('to');
+        const nameFromHtml = document.querySelector('meta[name="invited-guest"]')?.content.trim();
+        const name = nameFromUrl || nameFromHtml || null;
 
         if (name) {
             const guestName = document.getElementById('guest-name');
@@ -290,7 +283,7 @@ export const guest = (() => {
     /**
      * @returns {Promise<void>}
      */
-    const booting = async () => {
+    const initializePage = async () => {
         animateSvg();
         countDownDate();
         showGuestName();
@@ -309,8 +302,6 @@ export const guest = (() => {
         // wait until welcome screen is show.
         await util.changeOpacity(document.getElementById('welcome'), true);
 
-        // remove loading screen and show welcome screen.
-        await util.changeOpacity(document.getElementById('loading'), false).then((el) => el.remove());
     };
 
     /**
@@ -334,7 +325,7 @@ export const guest = (() => {
 
         window.addEventListener('resize', util.debounce(slide));
         // Loading screen dilewati langsung, gak nunggu semua asset selesai preload.
-        booting();
+        initializePage();
         document.addEventListener('hide.bs.modal', () => document.activeElement?.blur());
         document.getElementById('button-modal-download').addEventListener('click', (e) => {
             img.download(e.currentTarget.getAttribute('data-src'));

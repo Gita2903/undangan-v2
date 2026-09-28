@@ -4,8 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'undangan.db');
-const DEFAULT_ACCESS_KEY = 'a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef012';
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'undangan.db');
+const DEFAULT_ACCESS_KEY = '4eaf6356471a486becad049482cc9f0130ec225c59e586fcf1bc096e93e43f57';
 
 let db;
 
@@ -66,28 +66,84 @@ function initDatabase() {
             FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS invited_guests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            group_name TEXT NOT NULL DEFAULT '',
+            token_hash TEXT UNIQUE NOT NULL,
+            revoked_at DATETIME DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS check_ins (
+            guest_id INTEGER PRIMARY KEY,
+            staff_username TEXT NOT NULL,
+            checked_in_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (guest_id) REFERENCES invited_guests(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
         CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
         CREATE INDEX IF NOT EXISTS idx_likes_comment_id ON likes(comment_id);
+        CREATE INDEX IF NOT EXISTS idx_invited_guests_name ON invited_guests(name);
     `);
 
     // Seed default admin user if none exists
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
     if (userCount.count === 0) {
-        const hashedPassword = bcrypt.hashSync('admin123', 10);
+        const isProduction = process.env.NODE_ENV === 'production';
+        const email = process.env.ADMIN_EMAIL || (isProduction ? '' : 'admin@undangan.com');
+        const password = process.env.ADMIN_PASSWORD || (isProduction ? '' : 'admin123');
+        const accessKey = process.env.ADMIN_ACCESS_KEY || (isProduction ? '' : DEFAULT_ACCESS_KEY);
+
+        if (isProduction && (!email || password.length < 12 || accessKey.length < 32)) {
+            throw new Error('Production database bootstrap requires ADMIN_EMAIL, ADMIN_PASSWORD (12+ chars), and ADMIN_ACCESS_KEY (32+ chars).');
+        }
+
+        const hashedPassword = bcrypt.hashSync(password, 10);
         const userUuid = uuidv4();
 
         db.prepare(`
             INSERT INTO users (uuid, name, email, password, access_key)
             VALUES (?, ?, ?, ?, ?)
-        `).run(userUuid, 'Admin', 'admin@undangan.com', hashedPassword, DEFAULT_ACCESS_KEY);
+        `).run(userUuid, process.env.ADMIN_NAME || 'Admin', email, hashedPassword, accessKey);
 
-        console.log('='.repeat(55));
-        console.log('📧 Default Admin Account Initialized:');
-        console.log(`   Email      : admin@undangan.com`);
-        console.log(`   Password   : admin123`);
-        console.log(`   Access Key : ${DEFAULT_ACCESS_KEY}`);
-        console.log('='.repeat(55));
+        console.log(`Admin account initialized for ${email}.`);
+    } else if (process.env.NODE_ENV === 'production') {
+        const defaultAdmin = db.prepare('SELECT * FROM users WHERE email = ? OR access_key = ? LIMIT 1')
+            .get('admin@undangan.com', DEFAULT_ACCESS_KEY);
+        const usesDefaultCredentials = defaultAdmin && (
+            bcrypt.compareSync('admin123', defaultAdmin.password) || defaultAdmin.access_key === DEFAULT_ACCESS_KEY
+        );
+
+        if (usesDefaultCredentials) {
+            const email = process.env.ADMIN_EMAIL || '';
+            const password = process.env.ADMIN_PASSWORD || '';
+            const accessKey = process.env.ADMIN_ACCESS_KEY || '';
+
+            if (!email || password.length < 12 || accessKey.length < 32) {
+                throw new Error('The existing database still has demo admin credentials. Set ADMIN_EMAIL, ADMIN_PASSWORD (12+ chars), and ADMIN_ACCESS_KEY (32+ chars) in backend/.env to rotate them.');
+            }
+
+            if (password === 'admin123' || accessKey === DEFAULT_ACCESS_KEY) {
+                throw new Error('ADMIN_PASSWORD and ADMIN_ACCESS_KEY must both differ from the demo credentials.');
+            }
+
+            const emailOwner = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+            if (emailOwner && emailOwner.id !== defaultAdmin.id) {
+                throw new Error('ADMIN_EMAIL already belongs to another account; resolve the duplicate before rotating demo credentials.');
+            }
+
+            const hashedPassword = bcrypt.hashSync(password, 10);
+            db.prepare(`
+                UPDATE users
+                SET name = ?, email = ?, password = ?, access_key = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `).run(process.env.ADMIN_NAME || defaultAdmin.name, email, hashedPassword, accessKey, defaultAdmin.id);
+
+            console.log(`Demo admin credentials rotated for ${email}.`);
+        }
     }
 
     return db;
@@ -112,9 +168,16 @@ function getDb() {
     return db;
 }
 
+function closeDatabase() {
+    if (db) {
+        db.close();
+        db = null;
+    }
+}
+
 module.exports = {
     initDatabase,
     getDb,
+    closeDatabase,
     generateAccessKey,
-    DEFAULT_ACCESS_KEY,
 };
