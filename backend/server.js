@@ -28,6 +28,9 @@ if (process.env.TRUST_PROXY_HOPS) {
         throw new Error('TRUST_PROXY_HOPS must be a positive integer.');
     }
     app.set('trust proxy', proxyHops);
+} else {
+    // Default to 1 proxy hop for platforms like Vercel
+    app.set('trust proxy', 1);
 }
 
 // Initialize SQLite database
