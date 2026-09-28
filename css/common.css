@@ -1,0 +1,139 @@
+html {
+    scroll-behavior: smooth !important;
+    width: 100vw !important;
+}
+
+body {
+    font-family: 'Josefin Sans', sans-serif !important;
+    padding: 0 !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+}
+
+i {
+    width: auto !important;
+}
+
+body,
+div,
+nav,
+svg,
+section {
+    will-change: background-color;
+    transition: background-color 350ms ease;
+}
+
+svg>path {
+    will-change: color;
+    transition: color 350ms ease;
+}
+
+html[data-bs-theme="dark"] .navbar {
+    background-color: rgba(var(--bs-dark-rgb), 0.75) !important;
+    backdrop-filter: blur(0.5rem);
+}
+
+html[data-bs-theme="light"] .navbar {
+    background-color: rgba(var(--bs-light-rgb), 0.75) !important;
+    backdrop-filter: blur(0.5rem);
+}
+
+html[data-bs-theme="dark"] .text-theme-auto {
+    color: rgb(var(--bs-light-rgb));
+}
+
+html[data-bs-theme="light"] .text-theme-auto {
+    color: rgb(var(--bs-dark-rgb));
+}
+
+html[data-bs-theme="dark"] .nav-link {
+    color: rgba(var(--bs-white-rgb), 0.5);
+}
+
+html[data-bs-theme="light"] .nav-link {
+    color: rgba(var(--bs-black-rgb), 0.5);
+}
+
+html[data-bs-theme="dark"] .bg-theme-auto {
+    background-color: #0f2338;
+}
+
+html[data-bs-theme="light"] .bg-theme-auto {
+    background-color: #eaf2fd;
+}
+
+html[data-bs-theme="dark"] .btn-outline-auto {
+    --bs-btn-color: #7fb2ff;
+    --bs-btn-border-color: #7fb2ff;
+    --bs-btn-hover-color: #0f2338;
+    --bs-btn-hover-bg: #7fb2ff;
+    --bs-btn-hover-border-color: #7fb2ff;
+    --bs-btn-focus-shadow-rgb: 127, 178, 255;
+    --bs-btn-active-color: #0f2338;
+    --bs-btn-active-bg: #7fb2ff;
+    --bs-btn-active-border-color: #7fb2ff;
+    --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+    --bs-btn-disabled-color: #7fb2ff;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #7fb2ff;
+    --bs-gradient: none;
+}
+
+html[data-bs-theme="light"] .btn-outline-auto {
+    --bs-btn-color: #2f6fd6;
+    --bs-btn-border-color: #2f6fd6;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #2f6fd6;
+    --bs-btn-hover-border-color: #2f6fd6;
+    --bs-btn-focus-shadow-rgb: 47, 111, 214;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #2f6fd6;
+    --bs-btn-active-border-color: #2f6fd6;
+    --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+    --bs-btn-disabled-color: #2f6fd6;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #2f6fd6;
+    --bs-gradient: none;
+}
+
+html[data-bs-theme="dark"] .bg-overlay-auto {
+    background-color: rgba(var(--bs-black-rgb), 0.5);
+    backdrop-filter: blur(0.25rem);
+}
+
+html[data-bs-theme="light"] .bg-overlay-auto {
+    background-color: rgba(var(--bs-white-rgb), 0.5);
+    backdrop-filter: blur(0.25rem);
+}
+
+.hover-area {
+    display: none;
+    cursor: pointer;
+}
+
+.hover-wrapper:hover .hover-area {
+    display: flex;
+}
+
+.gif-image {
+    max-height: 10rem;
+}
+
+/* ===== Tema Putih & Biru — Undangan Rendra & Gita ===== */
+:root {
+    --bs-primary: #2f6fd6;
+    --bs-primary-rgb: 47, 111, 214;
+    --bs-link-color: #2f6fd6;
+    --bs-link-color-rgb: 47, 111, 214;
+    --bs-link-hover-color: #1f4f9f;
+    --bs-link-hover-color-rgb: 31, 79, 159;
+}
+
+.navbar .nav-link.active,
+.navbar .nav-link:hover {
+    color: #2f6fd6 !important;
+}
+
+.progress-bar {
+    background-color: #2f6fd6 !important;
+}
