@@ -147,6 +147,43 @@ export const guest = (() => {
     };
 
     /**
+     * Slideshow background untuk hero (tampilan smartphone / panel kanan).
+     * Beda dengan slide() yang khusus panel desktop, ini selalu jalan
+     * dan crossfade antar foto.
+     * @returns {Promise<void>}
+     */
+    const slideHome = async () => {
+        const interval = 6000;
+        const slides = document.querySelectorAll('.slide-home');
+
+        if (slides.length === 0) {
+            return;
+        }
+
+        let index = 0;
+        slides[index].classList.add('slide-home-active');
+        await util.changeOpacity(slides[index], true);
+
+        if (slides.length === 1) {
+            return;
+        }
+
+        const loop = async () => {
+            const prev = slides[index];
+            index = (index + 1) % slides.length;
+            const next = slides[index];
+
+            next.classList.add('slide-home-active');
+            await Promise.all([util.changeOpacity(prev, false), util.changeOpacity(next, true)]);
+            prev.classList.remove('slide-home-active');
+
+            util.timeOut(loop, interval);
+        };
+
+        util.timeOut(loop, interval);
+    };
+
+    /**
      * @param {HTMLButtonElement} button
      * @returns {void}
      */
@@ -160,6 +197,7 @@ export const guest = (() => {
         }
 
         slide();
+        slideHome();
         theme.spyTop();
 
         confetti.basicAnimation();
