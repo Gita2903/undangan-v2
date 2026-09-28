@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const { getDb } = require('../database');
 const { authGuestOrAdmin } = require('../middleware/auth');
 const { filterBadWords } = require('../utils/filter');
+const { formatCommentDate } = require('../utils/date');
+const { isValidGifInput, resolveGifUrl } = require('../utils/gif');
 
 const router = express.Router();
 
@@ -23,68 +25,13 @@ function validateCommentPayload(body, isCreate) {
     if (body.presence !== undefined && body.presence !== null && typeof body.presence !== 'boolean') {
         return 'Presence must be a boolean';
     }
-    if (body.gif_id !== undefined && body.gif_id !== null && (typeof body.gif_id !== 'string' || body.gif_id.length > 200)) {
-        return 'GIF id must be a string of at most 200 characters';
+    if (body.gif_id !== undefined && body.gif_id !== null && body.gif_id !== '' && !isValidGifInput(body.gif_id)) {
+        return 'GIF id is invalid';
     }
     if (body.id !== undefined && body.id !== null && (typeof body.id !== 'string' || body.id.length > 64)) {
         return 'Parent id is invalid';
     }
     return null;
-}
-
-/**
- * Format SQLite CURRENT_TIMESTAMP to localized date string.
- */
-function formatCommentDate(dateString, timeZone = 'Asia/Jakarta') {
-    if (!dateString) return '';
-    try {
-        const d = new Date(dateString.includes('Z') ? dateString : dateString.replace(' ', 'T') + 'Z');
-        const formatted = new Intl.DateTimeFormat('id-ID', {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-            timeZone: timeZone || 'Asia/Jakarta',
-        }).format(d);
-        return formatted.replace(/\./g, ':');
-    } catch {
-        return dateString;
-    }
-}
-
-/**
- * Helper to fetch Tenor GIF URL if tenor_key is available.
- */
-async function resolveGifUrl(gifId, tenorKey) {
-    if (!gifId) return null;
-    if (gifId.startsWith('http://') || gifId.startsWith('https://')) {
-        try {
-            const parsedUrl = new URL(gifId);
-            const allowedHosts = ['tenor.com', 'media.tenor.com', 'c.tenor.com'];
-            if (allowedHosts.includes(parsedUrl.hostname)) {
-                return gifId;
-            }
-        } catch {
-            return null;
-        }
-        return null;
-    }
-    if (tenorKey) {
-        try {
-            const url = `https://tenor.googleapis.com/v2/posts?ids=${encodeURIComponent(gifId)}&key=${encodeURIComponent(tenorKey)}&media_filter=tinygif`;
-            const resp = await fetch(url);
-            if (resp.ok) {
-                const json = await resp.json();
-                const tinyUrl = json?.results?.[0]?.media_formats?.tinygif?.url;
-                if (tinyUrl) return tinyUrl;
-            }
-        } catch (err) {
-            console.warn('Tenor resolve failed:', err.message);
-        }
-    }
-    return gifId;
 }
 
 /**
@@ -259,6 +206,9 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
         }
 
         const gifUrl = await resolveGifUrl(gif_id, user.tenor_key);
+        if (gif_id && !gifUrl) {
+            return res.status(422).json({ error: ['GIF could not be resolved'] });
+        }
         const commentUuid = uuidv4();
         const commentOwn = crypto.randomBytes(16).toString('hex');
         const isAdminVal = req.isAdmin ? 1 : 0;
@@ -277,7 +227,7 @@ router.post('/comment', authGuestOrAdmin, async (req, res) => {
             name: name.trim(),
             presence: Boolean(presenceVal),
             comment: comment || null,
-            created_at: formatCommentDate(new Date().toISOString().replace('T', ' ').slice(0, 19), user.tz),
+            created_at: formatCommentDate(new Date(), user.tz),
             is_admin: Boolean(isAdminVal),
             is_parent: isParent,
             gif_url: gifUrl || null,
@@ -343,6 +293,9 @@ router.put('/comment/:id', authGuestOrAdmin, async (req, res) => {
         let gifUrl = commentRow.gif_url;
         if (gif_id !== undefined) {
             gifUrl = await resolveGifUrl(gif_id, user.tenor_key);
+            if (gif_id && !gifUrl) {
+                return res.status(422).json({ error: ['GIF could not be resolved'] });
+            }
         }
 
         const presenceVal = presence !== null && presence !== undefined ? (presence ? 1 : 0) : commentRow.presence;

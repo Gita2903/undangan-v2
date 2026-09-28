@@ -95,7 +95,7 @@ async function loadGuests() {
             if (guest.checked_in_at) {
                 const checkinTime = document.createElement('small');
                 checkinTime.className = 'd-block text-secondary mt-1';
-                checkinTime.textContent = new Date(`${guest.checked_in_at.replace(' ', 'T')}Z`).toLocaleString('id-ID');
+                checkinTime.textContent = new Date(guest.checked_in_at).toLocaleString('id-ID');
                 statusCell.appendChild(checkinTime);
             }
 

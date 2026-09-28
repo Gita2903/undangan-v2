@@ -144,21 +144,23 @@ router.post('/scan', authCheckinStaff, async (req, res) => {
                 return { status: 'revoked', guest };
             }
 
-            const existingCheckin = await tx.prepare(`
-                SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
-            `).get(guest.id);
-            if (existingCheckin) {
-                return { status: 'already_checked_in', guest, ...existingCheckin };
+            // Atomic claim: the PRIMARY KEY on guest_id makes concurrent scans safe,
+            // and ON CONFLICT turns the loser into a normal 'already_checked_in'
+            // instead of a unique-violation -> 500.
+            const inserted = await tx.prepare(`
+                INSERT INTO check_ins (guest_id, staff_username) VALUES (?, ?)
+                ON CONFLICT (guest_id) DO NOTHING
+                RETURNING checked_in_at, staff_username
+            `).get(guest.id, req.staff.username);
+
+            if (inserted) {
+                return { status: 'checked_in', guest, ...inserted };
             }
 
-            await tx.prepare('INSERT INTO check_ins (guest_id, staff_username) VALUES (?, ?)')
-                .run(guest.id, req.staff.username);
-                
-            const checkin = await tx.prepare(`
+            const existing = await tx.prepare(`
                 SELECT checked_in_at, staff_username FROM check_ins WHERE guest_id = ?
             `).get(guest.id);
-            
-            return { status: 'checked_in', guest, ...checkin };
+            return { status: 'already_checked_in', guest, ...existing };
         });
 
         return res.status(200).json({ code: 200, data: scanResult, error: null });

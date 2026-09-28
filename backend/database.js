@@ -33,8 +33,8 @@ async function runInitQueries() {
                 can_edit INTEGER NOT NULL DEFAULT 1,
                 can_delete INTEGER NOT NULL DEFAULT 1,
                 tenor_key TEXT DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS comments (
@@ -50,8 +50,8 @@ async function runInitQueries() {
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 ip TEXT DEFAULT NULL,
                 user_agent TEXT DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS likes (
@@ -59,7 +59,7 @@ async function runInitQueries() {
                 uuid TEXT UNIQUE NOT NULL,
                 comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
                 ip TEXT DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS invited_guests (
@@ -68,14 +68,14 @@ async function runInitQueries() {
                 name TEXT NOT NULL,
                 group_name TEXT NOT NULL DEFAULT '',
                 token_hash TEXT UNIQUE NOT NULL,
-                revoked_at TIMESTAMP DEFAULT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                revoked_at TIMESTAMPTZ DEFAULT NULL,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS check_ins (
                 guest_id INTEGER PRIMARY KEY REFERENCES invited_guests(id) ON DELETE CASCADE,
                 staff_username TEXT NOT NULL,
-                checked_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                checked_in_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);

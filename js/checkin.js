@@ -86,7 +86,7 @@ async function handleScan(decodedText) {
         if (data.status === 'checked_in') {
             showResult('success', 'Check-in berhasil', 'Tamu tercatat masuk.', data.guest.name);
         } else if (data.status === 'already_checked_in') {
-            const time = data.checked_in_at ? new Date(`${data.checked_in_at.replace(' ', 'T')}Z`).toLocaleTimeString('id-ID') : '';
+            const time = data.checked_in_at ? new Date(data.checked_in_at).toLocaleTimeString('id-ID') : '';
             const detail = time ? `Sudah check-in pukul ${time}.` : 'Tiket ini sudah pernah dipakai.';
             showResult('error', 'QR sudah digunakan', detail, data.guest.name);
         } else if (data.status === 'revoked') {
