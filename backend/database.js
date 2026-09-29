@@ -78,6 +78,10 @@ async function runInitQueries() {
                 checked_in_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- Guest QR: token is derived from QR_TOKEN_SECRET + uuid + token_version (see utils/guestToken.js).
+            ALTER TABLE invited_guests ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE invited_guests ADD COLUMN IF NOT EXISTS pax INTEGER NOT NULL DEFAULT 1 CHECK (pax BETWEEN 1 AND 50);
+
             CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
             CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id);
             CREATE INDEX IF NOT EXISTS idx_likes_comment_id ON likes(comment_id);

@@ -83,11 +83,13 @@ async function handleScan(decodedText) {
             body: JSON.stringify({ token: decodedText.trim() }),
         });
 
+        const paxNote = data.guest?.pax > 1 ? ` Rombongan ${data.guest.pax} orang.` : '';
+
         if (data.status === 'checked_in') {
-            showResult('success', 'Check-in berhasil', 'Tamu tercatat masuk.', data.guest.name);
+            showResult('success', 'Check-in berhasil', `Tamu tercatat masuk.${paxNote}`, data.guest.name);
         } else if (data.status === 'already_checked_in') {
             const time = data.checked_in_at ? new Date(data.checked_in_at).toLocaleTimeString('id-ID') : '';
-            const detail = time ? `Sudah check-in pukul ${time}.` : 'Tiket ini sudah pernah dipakai.';
+            const detail = (time ? `Sudah check-in pukul ${time}.` : 'Tiket ini sudah pernah dipakai.') + paxNote;
             showResult('error', 'QR sudah digunakan', detail, data.guest.name);
         } else if (data.status === 'revoked') {
             showResult('error', 'Undangan dicabut', 'Hubungi admin acara.', data.guest?.name || '');

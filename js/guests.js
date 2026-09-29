@@ -1,4 +1,7 @@
 import QRCode from 'qrcode';
+import { renderCard, canvasToBytes, downloadBlob } from './common/qrcard.js';
+import { buildZip } from './common/zip.js';
+import { parseGuestText, markDuplicates, hasError, hasWarn, buildGuestCsv, cardFileName, rowKey } from './common/guestImport.js';
 
 const tokenKey = 'invitation-admin-token';
 const loginPanel = document.getElementById('admin-login');
@@ -7,7 +10,19 @@ const guestList = document.getElementById('guest-list');
 const message = document.getElementById('guest-message');
 const qrPanel = document.getElementById('qr-print');
 
+const BULK_CHUNK = 50; // must match backend/routes/checkin.js BULK_MAX
+
 const apiUrl = (path) => new URL(path, document.body.getAttribute('data-url') || `${window.location.origin}/`);
+
+/** Base URL of the invitation site itself (guests.html lives next to index.html). */
+const inviteBaseUrl = () => new URL('./', window.location.href);
+
+/** @param {string} token */
+function inviteLink(token) {
+    const url = inviteBaseUrl();
+    url.hash = `t=${token}`;
+    return url.toString();
+}
 
 async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
@@ -36,6 +51,12 @@ function setGuestMessage(text, isError = false) {
     message.classList.toggle('error-message', isError);
 }
 
+function parsePaxInput(el) {
+    const raw = el.value.trim();
+    if (raw === '') return undefined;
+    return Number(raw);
+}
+
 async function showQr(guest, token) {
     document.getElementById('qr-guest-name').textContent = guest.name;
     document.getElementById('qr-group-name').textContent = guest.group_name || 'Undangan perorangan';
@@ -46,6 +67,7 @@ async function showQr(guest, token) {
         errorCorrectionLevel: 'H',
         color: { dark: '#18211d', light: '#ffffff' },
     });
+    qrPanel.dataset.token = token;
     qrPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -73,6 +95,15 @@ function guestStatus(guest) {
     return status;
 }
 
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return false; // clipboard API unavailable (e.g. insecure context) - caller shows the link instead
+    }
+}
+
 async function loadGuests() {
     guestList.replaceChildren();
     try {
@@ -84,11 +115,13 @@ async function loadGuests() {
             const row = document.createElement('tr');
             const nameCell = document.createElement('td');
             const groupCell = document.createElement('td');
+            const paxCell = document.createElement('td');
             const statusCell = document.createElement('td');
             const actionCell = document.createElement('td');
             const actions = document.createElement('div');
             nameCell.textContent = guest.name;
             groupCell.textContent = guest.group_name || '-';
+            paxCell.textContent = String(guest.pax ?? 1);
             statusCell.appendChild(guestStatus(guest));
             actions.className = 'row-actions';
 
@@ -99,16 +132,25 @@ async function loadGuests() {
                 statusCell.appendChild(checkinTime);
             }
 
+            if (guest.token && !guest.checked_in_at) {
+                actions.appendChild(actionButton('Salin link', 'btn btn-outline-dark btn-sm', async (e) => {
+                    const ok = await copyToClipboard(inviteLink(guest.token));
+                    e.currentTarget.textContent = ok ? 'Tersalin!' : 'Gagal, lihat QR';
+                    setTimeout(() => { e.currentTarget.textContent = 'Salin link'; }, 1500);
+                }));
+                actions.appendChild(actionButton('Lihat QR', 'btn btn-outline-dark btn-sm', () => showQr(guest, guest.token)));
+            }
+
             if (!guest.checked_in_at) {
-                const issueLabel = guest.revoked_at ? 'Aktifkan & QR baru' : 'QR baru';
+                const issueLabel = guest.needs_reissue ? 'Buat QR' : 'QR baru';
                 actions.appendChild(actionButton(issueLabel, 'btn btn-outline-dark btn-sm', async () => {
-                    if (!window.confirm(`Terbitkan QR baru untuk ${guest.name}? QR sebelumnya akan tidak berlaku.`)) {
+                    if (!guest.needs_reissue && !window.confirm(`Terbitkan QR baru untuk ${guest.name}? QR/link sebelumnya akan tidak berlaku.`)) {
                         return;
                     }
                     try {
                         const result = await api(`/api/checkin/invitations/${guest.uuid}/rotate`, { method: 'POST' });
                         await showQr(result.guest, result.token);
-                        setGuestMessage(`QR baru untuk ${guest.name} berhasil diterbitkan.`);
+                        setGuestMessage(`QR untuk ${guest.name} siap. Salin link atau unduh QR-nya.`);
                         await loadGuests();
                     } catch (error) {
                         setGuestMessage(error.message, true);
@@ -132,18 +174,21 @@ async function loadGuests() {
 
             actionCell.className = 'text-end';
             actionCell.appendChild(actions);
-            row.append(nameCell, groupCell, statusCell, actionCell);
+            row.append(nameCell, groupCell, paxCell, statusCell, actionCell);
             guestList.appendChild(row);
         });
+
+        return guests;
     } catch (error) {
         if (/401|Unauthorized|Token/i.test(error.message)) {
             sessionStorage.removeItem(tokenKey);
             manager.hidden = true;
             loginPanel.hidden = false;
             setLoginError('Sesi admin berakhir. Silakan masuk lagi.');
-            return;
+            return [];
         }
         setGuestMessage(error.message, true);
+        return [];
     }
 }
 
@@ -187,6 +232,7 @@ async function createGuest(event) {
             body: JSON.stringify({
                 name: document.getElementById('guest-name').value,
                 group_name: document.getElementById('group-name').value,
+                pax: parsePaxInput(document.getElementById('guest-pax')),
             }),
         });
         await showQr(result.guest, result.token);
@@ -198,6 +244,156 @@ async function createGuest(event) {
     } finally {
         button.disabled = false;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Impor massal
+// ---------------------------------------------------------------------------
+
+const bulkText = document.getElementById('bulk-text');
+const bulkPreviewBtn = document.getElementById('bulk-preview');
+const bulkImportBtn = document.getElementById('bulk-import');
+const bulkMessage = document.getElementById('bulk-message');
+const bulkPreviewWrap = document.getElementById('bulk-preview-wrap');
+const bulkPreviewBody = document.getElementById('bulk-preview-body');
+const bulkResults = document.getElementById('bulk-results');
+const bulkResultsMessage = document.getElementById('bulk-results-message');
+
+/** @type {ReturnType<typeof parseGuestText>} */
+let currentPreview = [];
+/** @type {{ guest: object, token: string }[]} */
+let lastImportedWithTokens = [];
+
+function renderPreview(rows) {
+    bulkPreviewBody.replaceChildren();
+    rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        if (hasError(row)) tr.className = 'table-danger';
+        else if (hasWarn(row)) tr.className = 'table-warning';
+
+        const cells = [String(row.line), row.name || '(kosong)', row.group_name || '-', String(row.pax)];
+        cells.forEach((text) => {
+            const td = document.createElement('td');
+            td.textContent = text;
+            tr.appendChild(td);
+        });
+
+        const noteCell = document.createElement('td');
+        noteCell.textContent = row.issues.map((i) => i.msg).join('; ');
+        tr.appendChild(noteCell);
+
+        bulkPreviewBody.appendChild(tr);
+    });
+    bulkPreviewWrap.hidden = rows.length === 0;
+}
+
+async function previewBulk() {
+    const existing = await loadGuests();
+    const existingKeys = existing.map((g) => rowKey(g.name, g.group_name || ''));
+    currentPreview = markDuplicates(parseGuestText(bulkText.value), existingKeys);
+
+    renderPreview(currentPreview);
+    bulkResults.hidden = true;
+
+    const importable = currentPreview.filter((r) => !hasError(r) && !hasWarn(r));
+    if (currentPreview.length === 0) {
+        bulkMessage.textContent = 'Tempel daftar tamu dulu di kotak teks.';
+        bulkImportBtn.hidden = true;
+        return;
+    }
+    const dupCount = currentPreview.filter((r) => !hasError(r) && hasWarn(r)).length;
+    bulkMessage.textContent = dupCount > 0
+        ? `${importable.length} dari ${currentPreview.length} baris siap diimpor (${dupCount} dobel akan dilewati).`
+        : `${importable.length} dari ${currentPreview.length} baris siap diimpor.`;
+    bulkImportBtn.hidden = importable.length === 0;
+}
+
+async function importBulk() {
+    // Baris dengan warning (mis. nama dobel di roster/paste) di-skip demi keamanan:
+    // dua tamu bernama sama tanpa disadari admin berarti dua QR untuk identitas yang
+    // kelihatannya sama. Kalau memang dua orang berbeda, admin bisa tambah manual
+    // lewat form satu-tamu (namanya boleh sama di situ, cuma di sini yang di-block).
+    const valid = currentPreview.filter((r) => !hasError(r) && !hasWarn(r));
+    const skippedDup = currentPreview.filter((r) => !hasError(r) && hasWarn(r)).length;
+    if (valid.length === 0) {
+        bulkMessage.textContent = skippedDup > 0
+            ? `${skippedDup} baris dilewati karena terdeteksi dobel. Tidak ada yang diimpor.`
+            : 'Tidak ada baris valid untuk diimpor.';
+        return;
+    }
+
+    bulkImportBtn.disabled = true;
+    lastImportedWithTokens = [];
+    let done = 0;
+
+    try {
+        for (let i = 0; i < valid.length; i += BULK_CHUNK) {
+            const chunk = valid.slice(i, i + BULK_CHUNK).map((r) => ({ name: r.name, group_name: r.group_name, pax: r.pax }));
+            bulkMessage.textContent = `Mengimpor ${done + 1}-${done + chunk.length} dari ${valid.length}...`;
+            // eslint-disable-next-line no-await-in-loop -- chunks must be sequential to keep server load and error attribution simple
+            const { guests } = await api('/api/checkin/invitations/bulk', { method: 'POST', body: JSON.stringify({ guests: chunk }) });
+            lastImportedWithTokens.push(...guests);
+            done += chunk.length;
+        }
+
+        bulkMessage.textContent = skippedDup > 0
+            ? `${done} tamu berhasil diimpor. ${skippedDup} baris dilewati karena terdeteksi dobel.`
+            : `${done} tamu berhasil diimpor.`;
+        bulkText.value = '';
+        currentPreview = [];
+        bulkPreviewWrap.hidden = true;
+        bulkImportBtn.hidden = true;
+
+        bulkResultsMessage.textContent = `${done} QR siap diunduh sebagai ZIP, CSV link, atau lembar cetak.`;
+        bulkResults.hidden = false;
+        await loadGuests();
+    } catch (error) {
+        bulkMessage.textContent = `Impor terhenti setelah ${done} tamu: ${error.message}. Tamu yang sudah masuk tetap tersimpan.`;
+    } finally {
+        bulkImportBtn.disabled = false;
+    }
+}
+
+async function downloadZip() {
+    if (lastImportedWithTokens.length === 0) return;
+    bulkResultsMessage.textContent = 'Menyiapkan ZIP...';
+    const files = [];
+    for (let i = 0; i < lastImportedWithTokens.length; i += 1) {
+        const { guest, token } = lastImportedWithTokens[i];
+        // eslint-disable-next-line no-await-in-loop -- rendering canvases one at a time keeps memory bounded for large imports
+        const canvas = await renderCard(token, { name: guest.name, subtitle: guest.pax > 1 ? `Rombongan ${guest.pax} orang` : (guest.group_name || '') });
+        files.push({ name: cardFileName(guest.name, i), data: canvasToBytes(canvas) });
+    }
+    downloadBlob(new Blob([buildZip(files)], { type: 'application/zip' }), 'qr-tamu.zip');
+    bulkResultsMessage.textContent = `${lastImportedWithTokens.length} QR siap diunduh sebagai ZIP, CSV link, atau lembar cetak.`;
+}
+
+function downloadCsv() {
+    if (lastImportedWithTokens.length === 0) return;
+    const rows = lastImportedWithTokens.map(({ guest, token }) => ({
+        name: guest.name, group_name: guest.group_name || '', pax: guest.pax, link: inviteLink(token),
+    }));
+    downloadBlob(new Blob([buildGuestCsv(rows)], { type: 'text/csv;charset=utf-8' }), 'tamu-link.csv');
+}
+
+async function printSheet() {
+    if (lastImportedWithTokens.length === 0) return;
+    const container = document.getElementById('bulk-print-sheet');
+    container.replaceChildren();
+
+    for (let i = 0; i < lastImportedWithTokens.length; i += 1) {
+        const { guest, token } = lastImportedWithTokens[i];
+        // eslint-disable-next-line no-await-in-loop -- sequential rendering, see downloadZip
+        const canvas = await renderCard(token, { name: guest.name, subtitle: guest.pax > 1 ? `Rombongan ${guest.pax} orang` : (guest.group_name || '') });
+        const card = document.createElement('div');
+        card.className = 'print-card';
+        card.appendChild(canvas);
+        container.appendChild(card);
+    }
+
+    container.hidden = false;
+    window.print();
+    container.hidden = true;
 }
 
 document.getElementById('login-form').addEventListener('submit', login);
@@ -216,6 +412,12 @@ document.getElementById('download-qr').addEventListener('click', () => {
     link.href = document.getElementById('qr-canvas').toDataURL('image/png');
     link.click();
 });
+
+bulkPreviewBtn.addEventListener('click', previewBulk);
+bulkImportBtn.addEventListener('click', importBulk);
+document.getElementById('bulk-download-zip').addEventListener('click', downloadZip);
+document.getElementById('bulk-download-csv').addEventListener('click', downloadCsv);
+document.getElementById('bulk-print').addEventListener('click', printSheet);
 
 if (sessionStorage.getItem(tokenKey)) {
     showAdmin();

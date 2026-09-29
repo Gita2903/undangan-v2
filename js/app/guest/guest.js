@@ -2,6 +2,7 @@ import { video } from './video.js';
 import { image } from './image.js';
 import { audio } from './audio.js';
 import { progress } from './progress.js';
+import { qr } from './qr.js';
 import { util } from '../../common/util.js';
 import { bs } from '../../libs/bootstrap.js';
 import { loader } from '../../libs/loader.js';
@@ -364,6 +365,7 @@ export const guest = (() => {
         window.addEventListener('resize', util.debounce(slide));
         // Loading screen dilewati langsung, gak nunggu semua asset selesai preload.
         initializePage();
+        qr.init().catch((err) => console.warn('QR section failed:', err));
         document.addEventListener('hide.bs.modal', () => document.activeElement?.blur());
         document.getElementById('button-modal-download').addEventListener('click', (e) => {
             img.download(e.currentTarget.getAttribute('data-src'));

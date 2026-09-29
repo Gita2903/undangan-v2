@@ -48,9 +48,39 @@
                         <input class="form-control mb-3" id="guest-name" name="name" maxlength="100" required>
                         <label class="form-label" for="group-name">Keluarga / kelompok <span class="optional-label">Opsional</span></label>
                         <input class="form-control mb-3" id="group-name" name="group_name" maxlength="100">
+                        <label class="form-label" for="guest-pax">Jumlah orang <span class="optional-label">Opsional, default 1</span></label>
+                        <input class="form-control mb-3" id="guest-pax" name="pax" type="number" min="1" max="50" placeholder="1">
                         <button id="create-guest" class="btn btn-dark" type="submit">Buat undangan QR</button>
                     </form>
                     <p id="guest-message" class="form-message" role="status"></p>
+                </section>
+
+                <section class="tool-panel bulk-panel">
+                    <p class="eyebrow">IMPOR MASSAL</p>
+                    <h2>Tempel daftar tamu</h2>
+                    <p class="muted-line">Satu tamu per baris: <code>Nama</code>, atau <code>Nama, Kelompok</code>, atau <code>Nama, Kelompok, Jumlah orang</code>. Bisa juga tempel langsung dari Excel/WhatsApp.</p>
+                    <textarea id="bulk-text" class="form-control mb-2" rows="6" placeholder="Budi Santoso, Kantor, 2&#10;Sari, Keluarga Sari&#10;Dewi"></textarea>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button id="bulk-preview" class="btn btn-outline-dark btn-sm" type="button">Pratinjau</button>
+                        <button id="bulk-import" class="btn btn-dark btn-sm" type="button" hidden>Impor tamu valid</button>
+                    </div>
+                    <p id="bulk-message" class="form-message" role="status"></p>
+
+                    <div id="bulk-preview-wrap" class="table-responsive mt-2" hidden>
+                        <table class="table table-sm align-middle mb-0">
+                            <thead><tr><th>Baris</th><th>Nama</th><th>Kelompok</th><th>Pax</th><th>Catatan</th></tr></thead>
+                            <tbody id="bulk-preview-body"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="bulk-results" class="bulk-results" hidden>
+                        <p class="form-message" id="bulk-results-message"></p>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button id="bulk-download-zip" class="btn btn-outline-dark btn-sm" type="button">Unduh ZIP QR (PNG)</button>
+                            <button id="bulk-download-csv" class="btn btn-outline-dark btn-sm" type="button">Unduh CSV link</button>
+                            <button id="bulk-print" class="btn btn-outline-dark btn-sm" type="button">Cetak lembar QR</button>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="qr-print" class="tool-panel qr-panel" hidden>
@@ -79,13 +109,14 @@
                 </div>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
-                        <thead><tr><th>Nama</th><th>Kelompok</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                        <thead><tr><th>Nama</th><th>Kelompok</th><th>Pax</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                         <tbody id="guest-list"></tbody>
                     </table>
                 </div>
                 <p id="empty-state" class="empty-state" hidden>Belum ada tamu. Tambahkan nama untuk menerbitkan QR.</p>
             </section>
         </section>
+        <div id="bulk-print-sheet" hidden></div>
     </main>
 </body>
 </html>

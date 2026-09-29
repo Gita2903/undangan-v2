@@ -152,3 +152,16 @@ body {
     #qr-print button { display: none !important; }
     #qr-canvas { width: 340px; }
 }
+
+.bulk-panel textarea { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 13px; }
+.bulk-results { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.table-danger, .table-warning { --bs-table-bg: transparent; }
+.table-danger td { background: rgba(154,48,48,0.08); }
+.table-warning td { background: rgba(244,223,177,0.35); }
+
+@media print {
+    #bulk-print-sheet, #bulk-print-sheet * { visibility: visible !important; }
+    #bulk-print-sheet { position: absolute; inset: 0 auto auto 0; width: 100%; border: 0; }
+    .print-card { display: inline-block; width: 45%; margin: 2.5%; text-align: center; page-break-inside: avoid; }
+    .print-card canvas { width: 100%; height: auto; }
+}
