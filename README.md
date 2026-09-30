@@ -1,4 +1,4 @@
-# 💌 Undangan Pernikahan Digital — Rendra & Gita
+# 💌 Undangan Pernikahan Digital — Rendra Mukti & Gita Rahayu S.Ak
 
 Website undangan pernikahan digital yang responsif dan interaktif, dengan **backend mandiri** (Node.js + Express) dan database **PostgreSQL** (Supabase). Tidak bergantung pada layanan undangan pihak ketiga.
 
